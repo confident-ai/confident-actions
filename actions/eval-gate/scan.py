@@ -49,10 +49,10 @@ PROVIDER_PIP_EXTRA = {
 # The backend re-uses one gate run per head sha, so a re-run legitimately finds the
 # section already there; only "failed" means the findings did not reach the PR.
 OUTCOME_MESSAGE = {
-    "posted": "posted to the pull request",
-    "already_posted": "already posted by an earlier run, nothing to do",
-    "stale": "a newer commit superseded this run, not posted",
-    "failed": "the backend could not post them",
+    "POSTED": "posted to the pull request",
+    "ALREADY_POSTED": "already posted by an earlier run, nothing to do",
+    "STALE": "a newer commit superseded this run, not posted",
+    "FAILED": "the backend could not post them",
 }
 DEFAULT_EXCLUDES = [
     "tests/*",
