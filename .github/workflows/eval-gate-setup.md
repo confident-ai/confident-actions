@@ -230,7 +230,7 @@ You configure a customer's repository for the **Confident PR Eval Gate** and ope
 - **Job id** (echoed back by an automated job, not by you): `${{ inputs.jobId }}`.
 - **Confident API base URL**: `${{ inputs.apiBaseUrl }}`.
 - **Pinned dataset**: alias `${{ inputs.datasetAlias }}`, version `${{ inputs.datasetVersion }}`. An empty alias means no dataset is pinned — either a **risk-only** setup, or a **bootstrap** setup (see the next item). Confident serves the gate configuration to the runner at CI time in both cases.
-- **Propose starter artifacts**: `${{ inputs.proposeArtifacts }}`. When `true`, nothing is configured in Confident yet — you additionally propose a starter dataset and metric collection from what you learn reading the repo (Step 5), and Confident pins the gate to them.
+- **Propose starter artifacts**: `${{ inputs.proposeArtifacts }}`. When `true`, inspect whether starter artifacts are needed or whether the current code requires a change to the existing dataset and metrics (Step 5). Reuse existing artifacts by default.
 - **Default branch**: `${{ inputs.defaultBranch }}`.
 - **Sample inputs** (JSON array — the real shape each `input` passed to `run()` will have; dataset inputs, or plain-string attack prompts for risk-only setups; empty for bootstrap setups, where you derive the input shape from the repo yourself): `${{ inputs.sampleInputs }}`.
 
@@ -311,9 +311,11 @@ Rules for the workflow:
 
 Run `python -m py_compile ./target-repo/confident_eval.py` (and any module you imported). If it fails and you cannot fix it within scope, keep the stub form of `run()` rather than shipping broken code — but still open the PR (Step 6).
 
-## Step 5 — Propose starter artifacts (bootstrap setups only)
+## Step 5 — Reuse or update evaluation artifacts
 
 Skip this step entirely unless **Propose starter artifacts** above is `true`.
+
+If a pinned dataset alias is already provided, reuse it and the existing metric collection. Do not generate artifacts merely because this is a new setup PR. Compare the real sample inputs with the code you inspected. Only if a concrete code change makes those inputs or evaluation criteria incompatible, emit the artifact proposal below with an additional top-level `"refactorReason"` string describing the specific incompatibility and relevant code. Otherwise, omit artifacts.json entirely. Confident updates the existing metric collection and creates a version of the existing dataset, preserving its earlier data; it does not create another dataset or collection. Do not rename existing resources or claim incompatibility for cosmetic differences.
 
 From what you learned reading the code, propose the starter dataset and metric collection Confident will pin the gate to. Write **exactly one strict-JSON file** to `/tmp/gh-aw/eval-gate-artifacts/artifacts.json`. That absolute path is the only one the upload step reads — **not** a path under your working directory such as `/tmp/gh-aw/agent/eval-gate-artifacts/`; a file anywhere else is silently lost and Confident reports the setup as failed. Write it with a quoted heredoc so the shell leaves the JSON alone, then check it parses:
 

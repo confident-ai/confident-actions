@@ -29,7 +29,7 @@ def git_context() -> Dict[str, object]:
     repo = os.environ.get("REPO", "/")
     owner, _, name = repo.partition("/")
     pr = os.environ.get("PR_NUMBER") or ""
-    return {
+    context = {
         "repoOwner": owner,
         "repoName": name,
         "repoId": int(os.environ.get("REPO_ID") or 0),
@@ -38,6 +38,12 @@ def git_context() -> Dict[str, object]:
         "headSha": os.environ.get("HEAD_SHA") or "",
         "baseBranch": os.environ.get("BASE_BRANCH") or "",
     }
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    if PROVIDER == "GITHUB" and run_id.isdigit() and attempt.isdigit():
+        context["workflowRunId"] = int(run_id)
+        context["workflowRunAttempt"] = int(attempt)
+    return context
 
 
 def post(payload: Dict[str, object]) -> Dict[str, object]:
@@ -52,9 +58,12 @@ def post(payload: Dict[str, object]) -> Dict[str, object]:
 
 
 def fetch_gates() -> List[Dict[str, object]]:
-    query = urllib.parse.urlencode(
-        {"provider": PROVIDER, "repoId": git_context()["repoId"]}
-    )
+    context = git_context()
+    params = {"provider": PROVIDER, "repoId": context["repoId"]}
+    for key in ("workflowRunId", "workflowRunAttempt"):
+        if key in context:
+            params[key] = context[key]
+    query = urllib.parse.urlencode(params)
     req = urllib.request.Request(
         BASE + "/v1/eval-gate/config?" + query, headers=headers(), method="GET"
     )
@@ -68,7 +77,9 @@ def fetch_gates() -> List[Dict[str, object]]:
 
 
 def pull_goldens(alias: str, version: str) -> List[Dict[str, object]]:
-    url = BASE + "/v1/datasets/" + alias + "?version=" + version
+    dataset = urllib.parse.quote(alias, safe="")
+    query = urllib.parse.urlencode({"version": version})
+    url = BASE + "/v1/datasets/" + dataset + "?" + query
     req = urllib.request.Request(url, headers=headers(), method="GET")
     with urllib.request.urlopen(req, timeout=120) as r:
         body = json.loads(r.read().decode())
