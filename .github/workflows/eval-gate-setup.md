@@ -236,7 +236,13 @@ Inspect `./target-repo` and confirm it contains an LLM application (LLM API call
 
 ## Step 2 — Write `confident_eval.py`
 
-Write `./target-repo/confident_eval.py` with `def run(input):` that imports and calls the app and returns its string output. Keep it minimal and correct. Include brief comments capturing the contract so a later customer edit doesn't silently break the gate: the file must stay at the repo root, the function must stay named `run` and take exactly one `input` argument, and it must return the output **as a string** (the runner str()-coerces the return, so returning `None` is scored against the text "None", not a real answer). If — after genuinely investigating — you cannot determine how to call the app, write a **stub** that raises `NotImplementedError("Implement run() to call your app")`, and record exactly what's missing for the PR body (Step 6). Do not guess wildly.
+**If `./target-repo/confident_eval.py` already exists, leave it exactly as it is.** It is the
+customer-owned entrypoint and may contain their own working `run()`; replacing it silently
+destroys their code. Read it, confirm it still defines `run(input)` returning a string, and if
+it does, skip the rest of this step and note in the PR body (Step 6) that the existing file was
+kept. Only rewrite it if it does not define `run` at all — and say so explicitly in the PR body.
+
+Otherwise, write `./target-repo/confident_eval.py` with `def run(input):` that imports and calls the app and returns its string output. Keep it minimal and correct. Include brief comments capturing the contract so a later customer edit doesn't silently break the gate: the file must stay at the repo root, the function must stay named `run` and take exactly one `input` argument, and it must return the output **as a string** (the runner str()-coerces the return, so returning `None` is scored against the text "None", not a real answer). If — after genuinely investigating — you cannot determine how to call the app, write a **stub** that raises `NotImplementedError("Implement run() to call your app")`, and record exactly what's missing for the PR body (Step 6). Do not guess wildly.
 
 ## Step 3 — Write the CI workflow
 
@@ -345,7 +351,7 @@ _Maintenance note: the allow-list and JSON shape mirror `packages/shared/src/cat
 
 ## Step 6 — Open the pull request
 
-Open **one** PR from a fixed branch named `confident/eval-gate-setup` (re-running this workflow must update that same PR, never open a duplicate). **Always open the PR** — even in the stub-fallback case — so the gate is configured. The PR body should cover:
+Open **one** PR. Do not name the branch or try to reuse an existing one: `create_pull_request` derives the branch itself, and asking it to pin a fixed name fails with `fatal: Needed a single revision` because that ref does not exist. Re-runs are de-duplicated by this workflow's `tracker-id`, not by the branch. **Always open the PR** — even in the stub-fallback case — so the gate is configured. The PR body should cover:
 
 - what `run()` calls and how the input is mapped;
 - **a checklist of repository secrets the customer must set** for the gate to run (their app's runtime secrets that you referenced in the workflow `env:`), noting `CONFIDENT_API_KEY` is already set by Confident and that `CONFIDENT_SCAN_API_KEY` is optional (an OpenAI key that enables inline code-scan comments when the risk gate regresses);
