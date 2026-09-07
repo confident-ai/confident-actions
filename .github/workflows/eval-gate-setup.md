@@ -150,6 +150,10 @@ jobs:
       API_BASE_URL: ${{ inputs.apiBaseUrl }}
       JOB_ID: ${{ inputs.jobId }}
       PR_URL: ${{ needs.safe_outputs.outputs.created_pr_url }}
+      # The agent emits `noop` when the repository is already wired up, so
+      # there is nothing to open a PR for. Confident treats that as a success.
+      AGENT_NOOP: ${{ contains(needs.agent.outputs.output_types, 'noop') }}
+      AGENT_AI_CREDITS_EXCEEDED: ${{ needs.agent.outputs.ai_credits_rate_limit_error }}
     steps:
       - name: Download eval-gate artifact proposals
         continue-on-error: true
@@ -159,10 +163,17 @@ jobs:
           path: /tmp/eval-gate-artifacts
       - name: Report eval-gate setup outcome to Confident
         run: |
+          REASON=
           if [ -n "$PR_URL" ]; then
             STATUS=OPENED
+          elif [ "$AGENT_NOOP" = "true" ]; then
+            STATUS=NO_CHANGES
+          elif [ "$AGENT_AI_CREDITS_EXCEEDED" = "true" ]; then
+            STATUS=FAILED
+            REASON=AI_CREDITS_EXCEEDED
           else
             STATUS=FAILED
+            REASON=AGENT_INCOMPLETE
           fi
           OIDC=$(curl -sS --retry 3 --retry-delay 2 --retry-connrefused \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
@@ -187,10 +198,12 @@ jobs:
             -d "$(jq -n \
                   --arg jobId "$JOB_ID" \
                   --arg status "$STATUS" \
+                  --arg reason "$REASON" \
                   --arg prUrl "$PR_URL" \
                   --arg oidc "$OIDC" \
                   --slurpfile artifacts "$ARTIFACTS_FILE" \
                   '{jobId:$jobId, status:$status, oidc:$oidc}
+                   + (if $reason == "" then {} else {reason:$reason} end)
                    + (if $prUrl == "" then {} else {prUrl:$prUrl} end)
                    + (if ($artifacts[0] // null) == null then {} else {artifacts:$artifacts[0]} end)')")
           echo "Confident callback responded $HTTP_CODE: $(cat /tmp/eval-gate-callback-response.json)"
@@ -358,9 +371,15 @@ Open **one** PR. Do not name the branch or try to reuse an existing one: `create
 - if you shipped a stub `run()`: exactly what you couldn't determine and what the customer must fill in;
 - a note that the changes are best-effort and should be reviewed before merging.
 
+### When there is nothing to change
+
+If the repository **already** has both `confident_eval.py` defining `run(input)` and `.github/workflows/confident-eval-gate.yml` with the Confident eval-gate wiring, there is nothing to change. Report a **`noop`** that names both files and open no PR. Confident reads a `noop` as "already configured" and completes setup.
+
+Do **not** use `report_incomplete` for this case, and do not manufacture a cosmetic diff to have something to open a PR with. `report_incomplete` means you were blocked, and Confident surfaces it to the user as a failed setup.
+
 ## Reporting
 
-You do **not** report the result yourself. Once your run finishes, Confident is notified automatically by a deterministic workflow job that reads the outcome (PR opened or not). Your only responsibility is to make the correct edits and open the single PR per the steps above.
+You do **not** report the result yourself. Once your run finishes, Confident is notified automatically by a deterministic workflow job that reads the outcome: a PR you opened, the `noop` above, or a failure. Your only responsibility is to make the correct edits and either open the single PR or report the `noop`, per the steps above.
 
 ---
 
