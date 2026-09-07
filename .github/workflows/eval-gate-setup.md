@@ -315,7 +315,17 @@ Run `python -m py_compile ./target-repo/confident_eval.py` (and any module you i
 
 Skip this step entirely unless **Propose starter artifacts** above is `true`.
 
-From what you learned reading the code, propose the starter dataset and metric collection Confident will pin the gate to. Write **exactly one strict-JSON file** to `/tmp/gh-aw/eval-gate-artifacts/artifacts.json` (`mkdir -p /tmp/gh-aw/eval-gate-artifacts` first). The file is delivered to Confident automatically — it is **not** part of the PR. Both sections are required: the gate cannot activate without both.
+From what you learned reading the code, propose the starter dataset and metric collection Confident will pin the gate to. Write **exactly one strict-JSON file** to `/tmp/gh-aw/eval-gate-artifacts/artifacts.json`. That absolute path is the only one the upload step reads — **not** a path under your working directory such as `/tmp/gh-aw/agent/eval-gate-artifacts/`; a file anywhere else is silently lost and Confident reports the setup as failed. Write it with a quoted heredoc so the shell leaves the JSON alone, then check it parses:
+
+```bash
+/bin/mkdir -p /tmp/gh-aw/eval-gate-artifacts
+/bin/cat > /tmp/gh-aw/eval-gate-artifacts/artifacts.json <<'EOF'
+{ ...the JSON below... }
+EOF
+python -m json.tool /tmp/gh-aw/eval-gate-artifacts/artifacts.json > /dev/null
+```
+
+The file is delivered to Confident automatically — it is **not** part of the PR. Both sections are required: the gate cannot activate without both.
 
 ```json
 {
@@ -364,7 +374,23 @@ _Maintenance note: the allow-list and JSON shape mirror `packages/shared/src/cat
 
 ## Step 6 — Open the pull request
 
-Open **one** PR. Do not name the branch or try to reuse an existing one: `create_pull_request` derives the branch itself, and asking it to pin a fixed name fails with `fatal: Needed a single revision` because that ref does not exist. Re-runs are de-duplicated by this workflow's `tracker-id`, not by the branch. **Always open the PR** — even in the stub-fallback case — so the gate is configured. The PR body should cover:
+Open **one** PR by calling the **`safeoutputs` MCP tool `create_pull_request`** — a direct tool call, not a shell command — with these arguments:
+
+- `repo`: `"${{ inputs.repoOwner }}/${{ inputs.repoName }}"` — **mandatory**. This workflow can target any repository, so the tool has no default; without `repo` the call fails with `Repository '*' is not a valid 'owner/repo' slug`, and the tool cannot find the branch you committed in `./target-repo`.
+- `base`: `"${{ inputs.defaultBranch }}"`.
+- `title` and `body` (Markdown; the body content is described below).
+- `branch`: the local branch inside `./target-repo` that holds your commit, if you made one; otherwise omit it and the tool derives one.
+
+Re-runs are de-duplicated by this workflow's `tracker-id`, not by the branch name. If you can only reach the tool through the `safeoutputs` shell CLI, never put the body on the command line: backticks and quotes inside a double-quoted `--body` are executed by the shell, and a mangled payload reaches the tool as empty arguments. Write the arguments as JSON to a file with a quoted heredoc and pipe it instead:
+
+```bash
+/bin/cat > /tmp/gh-aw/create-pr.json <<'EOF'
+{"repo":"${{ inputs.repoOwner }}/${{ inputs.repoName }}","base":"${{ inputs.defaultBranch }}","title":"...","body":"..."}
+EOF
+safeoutputs create_pull_request . < /tmp/gh-aw/create-pr.json
+```
+
+**Always open the PR** — even in the stub-fallback case — so the gate is configured. The PR body should cover:
 
 - what `run()` calls and how the input is mapped;
 - **a checklist of repository secrets the customer must set** for the gate to run (their app's runtime secrets that you referenced in the workflow `env:`), noting `CONFIDENT_API_KEY` is already set by Confident and that `CONFIDENT_SCAN_API_KEY` is optional (an OpenAI key that enables inline code-scan comments when the risk gate regresses);
@@ -373,7 +399,9 @@ Open **one** PR. Do not name the branch or try to reuse an existing one: `create
 
 ### When there is nothing to change
 
-If the repository **already** has both `confident_eval.py` defining `run(input)` and `.github/workflows/confident-eval-gate.yml` with the Confident eval-gate wiring, there is nothing to change. Report a **`noop`** that names both files and open no PR. Confident reads a `noop` as "already configured" and completes setup.
+If the repository **already** has both `confident_eval.py` defining `run(input)` and `.github/workflows/confident-eval-gate.yml` that runs the `confident-ai/deepeval-actions/actions/eval-gate` step, there is nothing to change. Report a **`noop`** that names both files and open no PR. Confident reads a `noop` as "already configured" and completes setup.
+
+A wired workflow that differs from the skeleton in Step 3 is still wired. Its `env:` block, which secrets it maps (for example pointing `CONFIDENT_SCAN_API_KEY` at the customer's `OPENAI_API_KEY` secret), Python version, and install command are the customer's choices — do not "correct" them, and do not open a PR whose only change is one of them.
 
 Do **not** use `report_incomplete` for this case, and do not manufacture a cosmetic diff to have something to open a PR with. `report_incomplete` means you were blocked, and Confident surfaces it to the user as a failed setup.
 
