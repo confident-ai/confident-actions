@@ -41,6 +41,13 @@ on:
         required: false
         default: "false"
         type: string
+      # GitHub caps workflow_dispatch at 10 inputs and this is the tenth: any
+      # further agent context has to go inside this JSON object, not beside it.
+      existingArtifacts:
+        description: "JSON object naming the dataset and metric collection this repository is already pinned to ('{}' when none), so the agent refactors those instead of proposing a new pair"
+        required: false
+        default: "{}"
+        type: string
 
 permissions:
   contents: read
@@ -231,6 +238,7 @@ You configure a customer's repository for the **Confident PR Eval Gate** and ope
 - **Confident API base URL**: `${{ inputs.apiBaseUrl }}`.
 - **Pinned dataset**: alias `${{ inputs.datasetAlias }}`, version `${{ inputs.datasetVersion }}`. An empty alias means no dataset is pinned — either a **risk-only** setup, or a **bootstrap** setup (see the next item). Confident serves the gate configuration to the runner at CI time in both cases.
 - **Propose starter artifacts**: `${{ inputs.proposeArtifacts }}`. When `true`, inspect whether starter artifacts are needed or whether the current code requires a change to the existing dataset and metrics (Step 5). Reuse existing artifacts by default.
+- **Existing evaluation artifacts** (JSON object; `{}` when this repository has none): `${{ inputs.existingArtifacts }}`. Its keys are `datasetAlias`, `datasetVersion`, `metricCollection` and `metrics` (the metric names the collection already contains). Everything it names **already exists in Confident** — reuse it under that exact name (Step 5).
 - **Default branch**: `${{ inputs.defaultBranch }}`.
 - **Sample inputs** (JSON array — the real shape each `input` passed to `run()` will have; dataset inputs, or plain-string attack prompts for risk-only setups; empty for bootstrap setups, where you derive the input shape from the repo yourself): `${{ inputs.sampleInputs }}`.
 
@@ -315,9 +323,11 @@ Run `python -m py_compile ./target-repo/confident_eval.py` (and any module you i
 
 Skip this step entirely unless **Propose starter artifacts** above is `true`.
 
-If a pinned dataset alias is already provided, reuse it and the existing metric collection. Do not generate artifacts merely because this is a new setup PR. Compare the real sample inputs with the code you inspected. Only if a concrete code change makes those inputs or evaluation criteria incompatible, emit the artifact proposal below with an additional top-level `"refactorReason"` string describing the specific incompatibility and relevant code. Otherwise, omit artifacts.json entirely. Confident updates the existing metric collection and creates a version of the existing dataset, preserving its earlier data; it does not create another dataset or collection. Do not rename existing resources or claim incompatibility for cosmetic differences.
+**When Existing evaluation artifacts is not `{}`.** Its `datasetAlias` and `metricCollection` name resources that already exist. Reuse both **verbatim** — never propose a differently named dataset or collection, however much better a name the repo suggests. Do not generate artifacts merely because this is a new setup PR. Compare the real sample inputs, and the `metrics` already in the collection, with the code you inspected. Only if a concrete code change makes those inputs or evaluation criteria incompatible, emit the artifact proposal below — carrying the existing `alias` and `name` unchanged — with an additional top-level `"refactorReason"` string describing the specific incompatibility and relevant code. Otherwise, omit artifacts.json entirely. Confident updates the existing metric collection and creates a version of the existing dataset, preserving its earlier data; it does not create another dataset or collection. Do not rename existing resources or claim incompatibility for cosmetic differences.
 
-From what you learned reading the code, propose the starter dataset and metric collection Confident will pin the gate to. Write **exactly one strict-JSON file** to `/tmp/gh-aw/eval-gate-artifacts/artifacts.json`. That absolute path is the only one the upload step reads — **not** a path under your working directory such as `/tmp/gh-aw/agent/eval-gate-artifacts/`; a file anywhere else is silently lost and Confident reports the setup as failed. Write it with a quoted heredoc so the shell leaves the JSON alone, then check it parses:
+**When Existing evaluation artifacts is `{}`.** Nothing is pinned yet: from what you learned reading the code, propose the starter dataset and metric collection Confident will pin the gate to.
+
+Write the proposal as **exactly one strict-JSON file** to `/tmp/gh-aw/eval-gate-artifacts/artifacts.json`. That absolute path is the only one the upload step reads — **not** a path under your working directory such as `/tmp/gh-aw/agent/eval-gate-artifacts/`; a file anywhere else is silently lost and Confident reports the setup as failed. Write it with a quoted heredoc so the shell leaves the JSON alone, then check it parses:
 
 ```bash
 /bin/mkdir -p /tmp/gh-aw/eval-gate-artifacts
@@ -355,9 +365,9 @@ The file is delivered to Confident automatically — it is **not** part of the P
 
 Rules:
 
-- **Dataset** — a **single-turn** dataset (`"multiTurn": false`) with **5–15** inputs derived from the code, tests, or README: `{ "input", "expectedOutput"?, "context"?: [strings], "retrievalContext"?: [strings] }`. Each input must be something the `run()` you wrote in Step 2 can execute as-is. For a conversational app, use realistic first-turn prompts. Keep `input`/`expectedOutput` under 4000 characters and context entries under 2000 characters each. Name the alias after the repo or app.
+- **Dataset** — a **single-turn** dataset (`"multiTurn": false`) with **5–15** inputs derived from the code, tests, or README: `{ "input", "expectedOutput"?, "context"?: [strings], "retrievalContext"?: [strings] }`. Each input must be something the `run()` you wrote in Step 2 can execute as-is. For a conversational app, use realistic first-turn prompts. Keep `input`/`expectedOutput` under 4000 characters and context entries under 2000 characters each. Use the existing `datasetAlias` if there is one, and otherwise name the alias after the repo or app.
   - **Mix straightforward cases with edge cases.** This dataset is the benchmark every future prompt or model change is scored against, so a set of softballs that always passes is useless. Include inputs the app only handles when it's paying attention: ambiguous or underspecified questions, questions whose true answer is "I don't know / not in the docs" (hallucination bait), inputs that tempt the app outside its intended scope, boundary values from the domain logic, and adversarially phrased but legitimate requests. Aim for roughly half realistic happy-path, half edge cases — a careless regression should visibly move the scores.
-- **Metric collection** — **write the goldens first, then pick metrics the goldens can actually score.** Use `"multiTurn": false`. A metric whose required field is missing from even one golden errors on that test case, so the user's first gated PR comes back red through no fault of their own. Pick **4–6** total; `threshold` (0–1) is optional. **Roughly half must be custom G-Eval metrics** written from this repo's actual behavior; the rest come from the allow-list below.
+- **Metric collection** — use the existing `metricCollection` name if there is one, and otherwise name it after the repo or app. **Write the goldens first, then pick metrics the goldens can actually score.** Use `"multiTurn": false`. A metric whose required field is missing from even one golden errors on that test case, so the user's first gated PR comes back red through no fault of their own. Pick **4–6** total; `threshold` (0–1) is optional. **Roughly half must be custom G-Eval metrics** written from this repo's actual behavior; the rest come from the allow-list below.
   - **Custom G-Eval metrics** — a `metricSettings` entry with a `criteria` (what a judge LLM should check, in plain language, ≤4000 characters) and `evaluationParams` (which test-case fields the judge sees). Write criteria that encode what *this* app is supposed to do — its domain rules, required tone or format, what it must refuse, what its answers must be grounded in — not generic quality platitudes. Example: `"Check that the answer only cites return-policy clauses present in the retrieval context and refuses to promise refunds the policy does not cover."` Rules:
     - `evaluationParams` values: `input`, `actualOutput`, `expectedOutput`, `context`, `retrievalContext`. Always include `actualOutput`. Only reference a field **every** golden carries — same rule as the conditional catalog metrics (an invalid or empty list drops the metric server-side).
     - The `name` must be a short descriptive title (e.g. `Policy Grounding`) that does **not** collide with any catalog name below — a colliding name is treated as the catalog metric and your criteria is ignored.
@@ -381,7 +391,7 @@ Open **one** PR by calling the **`safeoutputs` MCP tool `create_pull_request`** 
 - `repo`: `"${{ inputs.repoOwner }}/${{ inputs.repoName }}"` — **mandatory**. This workflow can target any repository, so the tool has no default; without `repo` the call fails with `Repository '*' is not a valid 'owner/repo' slug`, and the tool cannot find the branch you committed in `./target-repo`.
 - `base`: `"${{ inputs.defaultBranch }}"`.
 - `title` and `body` (Markdown; the body content is described below).
-- `branch`: the local branch inside `./target-repo` that holds your commit, if you made one; otherwise omit it and the tool derives one.
+- `branch`: the local branch inside `./target-repo` that holds your commit. **Create that branch as `confident/eval-gate-setup-<short suffix>`** before committing. Confident lists past setup pull requests, and auto-closes superseded ones, by that exact prefix — a branch named anything else leaves the PR invisible in the product and never cleaned up. Only if you made no commit at all, omit the argument and the tool derives one.
 
 Re-runs are de-duplicated by this workflow's `tracker-id`, not by the branch name. If you can only reach the tool through the `safeoutputs` shell CLI, never put the body on the command line: backticks and quotes inside a double-quoted `--body` are executed by the shell, and a mangled payload reaches the tool as empty arguments. Write the arguments as JSON to a file with a quoted heredoc and pipe it instead:
 

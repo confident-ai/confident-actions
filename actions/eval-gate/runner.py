@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from enum import Enum
@@ -16,9 +17,23 @@ VERSION = os.environ.get("DATASET_VERSION") or "latest"
 PROVIDER = os.environ.get("CONFIDENT_PROVIDER") or "GITHUB"
 
 
+DISCONNECTED_MESSAGE = (
+    "eval-gate: Confident is not gating this repository (no valid "
+    "CONFIDENT_API_KEY for the connected project); skipping instead of failing "
+    "the check. Delete .github/workflows/confident-eval-gate.yml to stop this "
+    "workflow from running."
+)
+
+
 class RefType(str, Enum):
     PULL_REQUEST = "PULL_REQUEST"
     BRANCH = "BRANCH"
+
+
+def is_disconnected(error: Exception) -> bool:
+    # A 401/403 from Confident means the project disconnected this repository.
+    # That is a config state, and config state must never fail a customer's CI.
+    return isinstance(error, urllib.error.HTTPError) and error.code in (401, 403)
 
 
 def headers() -> Dict[str, str]:
@@ -57,7 +72,7 @@ def post(payload: Dict[str, object]) -> Dict[str, object]:
         return json.loads(r.read().decode())
 
 
-def fetch_gates() -> List[Dict[str, object]]:
+def fetch_gate_config() -> Dict[str, object]:
     context = git_context()
     params = {"provider": PROVIDER, "repoId": context["repoId"]}
     for key in ("workflowRunId", "workflowRunAttempt"):
@@ -70,10 +85,9 @@ def fetch_gates() -> List[Dict[str, object]]:
     with urllib.request.urlopen(req, timeout=120) as r:
         body = json.loads(r.read().decode())
     body = body.get("data", body)
-    gates = body.get("gates")
-    if not isinstance(gates, list):
+    if not isinstance(body.get("gates"), list):
         raise ValueError("malformed config response")
-    return gates
+    return body
 
 
 def pull_goldens(alias: str, version: str) -> List[Dict[str, object]]:
@@ -212,6 +226,9 @@ def legacy_main() -> None:
     try:
         goldens = pull_goldens(ALIAS, VERSION)
     except Exception as e:
+        if is_disconnected(e):
+            print(DISCONNECTED_MESSAGE)
+            return
         legacy_report_crash("could not pull dataset: " + str(e))
         return
 
@@ -224,6 +241,9 @@ def legacy_main() -> None:
     try:
         resp = post({"git": git_context(), "llmTestCases": test_cases})
     except Exception as e:
+        if is_disconnected(e):
+            print(DISCONNECTED_MESSAGE)
+            return
         legacy_report_crash("failed to submit results: " + str(e))
         return
     print(json.dumps(resp))
@@ -232,9 +252,16 @@ def legacy_main() -> None:
 def main() -> None:
     sys.path.insert(0, os.getcwd())
 
+    if not API_KEY:
+        print(DISCONNECTED_MESSAGE)
+        return
+
     try:
-        gates = fetch_gates()
+        config = fetch_gate_config()
     except Exception as e:
+        if is_disconnected(e):
+            print(DISCONNECTED_MESSAGE)
+            return
         print(
             "eval-gate: config endpoint unavailable (" + str(e) + ")",
             file=sys.stderr,
@@ -249,9 +276,14 @@ def main() -> None:
         )
         sys.exit(1)
 
+    gates = config["gates"]
     if not gates:
         # Config state must never fail a customer's CI.
-        print("eval-gate: no gates configured for this repository; nothing to run")
+        reason_message = config.get("reasonMessage")
+        if reason_message:
+            print("eval-gate: " + str(reason_message) + " Nothing to run.")
+        else:
+            print("eval-gate: no gates configured for this repository; nothing to run")
         return
 
     try:
