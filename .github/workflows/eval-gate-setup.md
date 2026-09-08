@@ -295,7 +295,7 @@ jobs:
         run: pip install -r requirements.txt # match the repo (poetry/uv/etc.)
       # Managed by Confident — keep this step, its env and its inputs as-is.
       - name: Confident PR Eval Gate
-        uses: confident-ai/deepeval-actions/actions/eval-gate@v1
+        uses: confident-ai/confident-actions/actions/eval-gate@v1
         env:
           # Optional: OpenAI key enabling DeepTeam's code scan when the risk gate regresses; unset = skip.
           CONFIDENT_SCAN_API_KEY: __SECRET_CONFIDENT_SCAN_API_KEY__
@@ -411,7 +411,7 @@ safeoutputs create_pull_request . < /tmp/gh-aw/create-pr.json
 
 ### When there is nothing to change
 
-If the repository **already** has both `confident_eval.py` defining `run(input)` and `.github/workflows/confident-eval-gate.yml` that runs the `confident-ai/deepeval-actions/actions/eval-gate` step, there is nothing to change. Report a **`noop`** that names both files and open no PR. Confident reads a `noop` as "already configured" and completes setup.
+If the repository **already** has both `confident_eval.py` defining `run(input)` and `.github/workflows/confident-eval-gate.yml` that runs the `confident-ai/confident-actions/actions/eval-gate` step, there is nothing to change. Report a **`noop`** that names both files and open no PR. Confident reads a `noop` as "already configured" and completes setup.
 
 A wired workflow that differs from the skeleton in Step 3 is still wired. Its `env:` block, which secrets it maps (for example pointing `CONFIDENT_SCAN_API_KEY` at the customer's `OPENAI_API_KEY` secret), Python version, and install command are the customer's choices — do not "correct" them, and do not open a PR whose only change is one of them.
 
