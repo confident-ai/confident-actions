@@ -23,7 +23,7 @@ When you connect a repository during Confident AI onboarding, the tracing automa
 
 1. Accesses it with a **short-lived token scoped to just that one repository**.
 2. Detects your framework and model setup and adds tracing with `confident-trace`,
-   using a native integration where available or the `@observe` decorator otherwise.
+   using supported automatic or native integrations, with custom spans where needed.
 3. Opens a **pull request** for you to review and merge.
 
 ### Run tracing setup on your own repo (self-serve)
