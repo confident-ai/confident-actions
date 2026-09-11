@@ -65,6 +65,10 @@ safe-outputs:
     expires: 7
 
 tools:
+  # Instrumentation requires the target repo's package manager, test commands,
+  # and local git operations. Network access remains constrained above, and
+  # checkout credentials are removed before the agent runs.
+  bash: [":*"]
   github:
     toolsets: [default]
     github-app:
