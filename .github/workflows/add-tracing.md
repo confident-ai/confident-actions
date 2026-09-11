@@ -24,6 +24,9 @@ safe-outputs:
     labels: ["confident-ai", "tracing"]
 
 tools:
+  # Instrumentation requires the repository's package manager, test commands,
+  # and local git operations. Network access remains constrained above.
+  bash: [":*"]
   github:
     toolsets: [default]
 
