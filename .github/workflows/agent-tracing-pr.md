@@ -21,6 +21,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: tracing-pr-${{ inputs.repoOwner }}-${{ inputs.repoName }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write
