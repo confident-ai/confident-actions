@@ -37,6 +37,8 @@ tracker-id: tracing-pr
 network:
   allowed:
     - defaults
+    - python
+    - node
 
 # This repo must stay public: safe-outputs checks it out with the customer-scoped
 # token. github-app is scoped per-section (not top-level) so activation uses GITHUB_TOKEN.
@@ -133,6 +135,7 @@ jobs:
       JOB_ID: ${{ inputs.jobId }}
       PR_URL: ${{ needs.safe_outputs.outputs.created_pr_url }}
       AGENT_RESULT: ${{ needs.agent.result }}
+      AGENT_NOOP: ${{ contains(needs.agent.outputs.output_types, 'noop') }}
     steps:
       - name: Download tracing artifact proposals
         continue-on-error: true
@@ -144,7 +147,7 @@ jobs:
         run: |
           if [ -n "$PR_URL" ]; then
             STATUS=OPENED
-          elif [ "$AGENT_RESULT" = "success" ]; then
+          elif [ "$AGENT_RESULT" = "success" ] && [ "$AGENT_NOOP" = "true" ]; then
             STATUS=NO_CHANGES
           else
             STATUS=FAILED
