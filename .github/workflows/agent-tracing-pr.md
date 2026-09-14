@@ -142,7 +142,10 @@ jobs:
       JOB_ID: ${{ inputs.jobId }}
       PR_URL: ${{ needs.safe_outputs.outputs.created_pr_url }}
       AGENT_RESULT: ${{ needs.agent.result }}
+      SAFE_OUTPUTS_RESULT: ${{ needs.safe_outputs.result }}
       AGENT_NOOP: ${{ contains(needs.agent.outputs.output_types, 'noop') }}
+      AGENT_INCOMPLETE: ${{ contains(needs.agent.outputs.output_types, 'report_incomplete') || contains(needs.agent.outputs.output_types, 'missing_data') || contains(needs.agent.outputs.output_types, 'missing_tool') }}
+      AGENT_AI_CREDITS_EXCEEDED: ${{ needs.agent.outputs.ai_credits_rate_limit_error }}
     steps:
       - name: Download tracing artifact proposals
         continue-on-error: true
@@ -154,7 +157,12 @@ jobs:
         run: |
           if [ -n "$PR_URL" ]; then
             STATUS=OPENED
-          elif [ "$AGENT_RESULT" = "success" ] && [ "$AGENT_NOOP" = "true" ]; then
+          elif [ "$AGENT_RESULT" != "success" ] || \
+               [ "$SAFE_OUTPUTS_RESULT" != "success" ] || \
+               [ "$AGENT_INCOMPLETE" = "true" ] || \
+               [ "$AGENT_AI_CREDITS_EXCEEDED" = "true" ]; then
+            STATUS=FAILED
+          elif [ "$AGENT_NOOP" = "true" ]; then
             STATUS=NO_CHANGES
           else
             STATUS=FAILED
