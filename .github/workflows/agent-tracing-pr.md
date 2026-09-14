@@ -94,6 +94,32 @@ post-steps:
 
 # Deterministic result callback: runs after safe_outputs so the real PR URL is available.
 jobs:
+  register-run:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    env:
+      CALLBACK_BASE_URL: ${{ inputs.callbackBaseUrl }}
+      JOB_ID: ${{ inputs.jobId }}
+    steps:
+      - name: Register setup run
+        run: |
+          OIDC=$(curl -sS --retry 3 --retry-delay 2 --retry-connrefused \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=confident-tracing" | jq -r '.value')
+          [ -n "$OIDC" ] && [ "$OIDC" != "null" ]
+          HTTP_CODE=$(curl -sS -X POST "${CALLBACK_BASE_URL}/v1/github-tracing/callback" \
+            --retry 5 --retry-delay 5 --retry-connrefused \
+            -o /tmp/tracing-setup-run-response.json -w '%{http_code}' \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg jobId "$JOB_ID" --arg oidc "$OIDC" \
+              '{jobId:$jobId, oidc:$oidc}')")
+          echo "Confident tracing callback responded $HTTP_CODE: $(cat /tmp/tracing-setup-run-response.json)"
+          case "$HTTP_CODE" in
+            2*) ;;
+            *) exit 1 ;;
+          esac
+
   report-result:
     needs: [agent, safe_outputs]
     if: always()
