@@ -42,16 +42,16 @@ checkout:
     # Base the PR patch on this checkout.
     current: true
     github-app:
-      app-id: ${{ secrets.CONFIDENT_DEEPEVAL_APP_ID }}
-      private-key: ${{ secrets.CONFIDENT_DEEPEVAL_PRIVATE_KEY }}
+      app-id: ${{ secrets.CONFIDENT_EVALGATE_APP_ID }}
+      private-key: ${{ secrets.CONFIDENT_EVALGATE_PRIVATE_KEY }}
       owner: ${{ inputs.repoOwner }}
       repositories:
         - ${{ inputs.repoName }}
 
 safe-outputs:
   github-app:
-    app-id: ${{ secrets.CONFIDENT_DEEPEVAL_APP_ID }}
-    private-key: ${{ secrets.CONFIDENT_DEEPEVAL_PRIVATE_KEY }}
+    app-id: ${{ secrets.CONFIDENT_EVALGATE_APP_ID }}
+    private-key: ${{ secrets.CONFIDENT_EVALGATE_PRIVATE_KEY }}
     owner: ${{ inputs.repoOwner }}
     repositories:
       - ${{ inputs.repoName }}
@@ -68,8 +68,8 @@ tools:
   github:
     toolsets: [default]
     github-app:
-      app-id: ${{ secrets.CONFIDENT_DEEPEVAL_APP_ID }}
-      private-key: ${{ secrets.CONFIDENT_DEEPEVAL_PRIVATE_KEY }}
+      app-id: ${{ secrets.CONFIDENT_EVALGATE_APP_ID }}
+      private-key: ${{ secrets.CONFIDENT_EVALGATE_PRIVATE_KEY }}
       owner: ${{ inputs.repoOwner }}
       repositories:
         - ${{ inputs.repoName }}
