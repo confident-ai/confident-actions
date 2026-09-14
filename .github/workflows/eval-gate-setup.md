@@ -157,9 +157,12 @@ jobs:
       API_BASE_URL: ${{ inputs.apiBaseUrl }}
       JOB_ID: ${{ inputs.jobId }}
       PR_URL: ${{ needs.safe_outputs.outputs.created_pr_url }}
+      AGENT_RESULT: ${{ needs.agent.result }}
+      SAFE_OUTPUTS_RESULT: ${{ needs.safe_outputs.result }}
       # The agent emits `noop` when the repository is already wired up, so
       # there is nothing to open a PR for. Confident treats that as a success.
       AGENT_NOOP: ${{ contains(needs.agent.outputs.output_types, 'noop') }}
+      AGENT_INCOMPLETE: ${{ contains(needs.agent.outputs.output_types, 'report_incomplete') || contains(needs.agent.outputs.output_types, 'missing_data') || contains(needs.agent.outputs.output_types, 'missing_tool') }}
       AGENT_AI_CREDITS_EXCEEDED: ${{ needs.agent.outputs.ai_credits_rate_limit_error }}
     steps:
       - name: Download eval-gate artifact proposals
@@ -173,11 +176,18 @@ jobs:
           REASON=
           if [ -n "$PR_URL" ]; then
             STATUS=OPENED
+          elif [ "$AGENT_RESULT" != "success" ] || \
+               [ "$SAFE_OUTPUTS_RESULT" != "success" ] || \
+               [ "$AGENT_INCOMPLETE" = "true" ] || \
+               [ "$AGENT_AI_CREDITS_EXCEEDED" = "true" ]; then
+            STATUS=FAILED
+            if [ "$AGENT_AI_CREDITS_EXCEEDED" = "true" ]; then
+              REASON=AI_CREDITS_EXCEEDED
+            else
+              REASON=AGENT_INCOMPLETE
+            fi
           elif [ "$AGENT_NOOP" = "true" ]; then
             STATUS=NO_CHANGES
-          elif [ "$AGENT_AI_CREDITS_EXCEEDED" = "true" ]; then
-            STATUS=FAILED
-            REASON=AI_CREDITS_EXCEEDED
           else
             STATUS=FAILED
             REASON=AGENT_INCOMPLETE
